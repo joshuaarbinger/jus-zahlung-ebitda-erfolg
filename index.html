@@ -17,11 +17,18 @@ td.knopf { background-color: #CCFFCC; text-align: center; }
 .seite { flex: 1 1 20em; min-width: 0; }
 table.b { border-collapse: collapse; width: 100%; table-layout: fixed; }
 td.n { text-align: right; white-space: nowrap; }
+td.umb { white-space: normal; }
+td.umb > * { white-space: nowrap; display: inline-block; }
 tr.b td:first-child { padding-left: 1.5em; }
 tr.summe td { font-weight: bold; }
-tr.hl td, li.hl { background-color: #FFCCCC; }
+tr.hl td, li.hl, span.hl, td.hl { background-color: #FFCCCC; }
+span[data-bu]:not(.svs), td[data-bu], tr[data-bu] { cursor: pointer; }
 #legende { list-style: none; padding-left: 0; }
-#legende li { padding: 1px 2px; }
+#legende li { padding: 0 3px; }
+body { line-height: 1.4; }
+table.b td, table.b th { padding: 0 3px; line-height: 1.4; }
+#sv { line-height: 1.4; }
+span.svs { padding: 2.7px 0; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
 .grau { color: #808080; }
 input[type=range] { width: 100%; }
 </style>
@@ -294,12 +301,15 @@ function ergebnis(i){ let r = 0; for (const [so, ha, amt] of cur.p[i].b) for (co
 function kum(p){ let r = 0; for (let i = 1; i <= p; i++) r += ergebnis(i); return r; }
 const klasse = k => k === 'Bank' ? 'zahl' : isGuV(k) ? (K[k].e ? 'ebitda' : 'erfolg') : '';
 
+function konto(name, anfang, zeilen){
+  if (!zeilen.length) return `<tr><td>${esc(name)}</td><td class="n"></td></tr>`;
+  const d = zeilen.reduce((x, z) => x + z[1], 0);
+  return `<tr data-bu="${zeilen.map(z => z[2]).join(' ')}"><td>${esc(name)}</td><td class="n">${fmtD(d)}</td></tr>`;
+}
 function block(name, anfang, zeilen){
-  if (!zeilen.length) return `<tr><td>${esc(name)}</td><td class="n">${fmt(anfang)}</td></tr>`;
-  const ende = anfang + zeilen.reduce((x, z) => x + z[1], 0);
-  let h = `<tr><td>${esc(name)}</td><td class="n grau">${fmt(anfang)}</td></tr>`;
+  let h = `<tr><td>${esc(name)}</td><td class="n"></td></tr>`;
   for (const [l, d, i, c] of zeilen) h += `<tr class="b ${c}" data-bu="${i}"><td>${l}</td><td class="n">${fmtD(d)}</td></tr>`;
-  return h + `<tr><td></td><td class="n"><b>${fmt(ende)}</b></td></tr>`;
+  return h;
 }
 
 function wirk(so, ha){
@@ -317,34 +327,71 @@ function flags(i){
   return f;
 }
 
-function render(){
+const SVMAP = {
+  'Zusatz: Warenverkauf auf Ziel': {'Wareneinkauf':[1], 'Lieferung':[2], 'Wareneinsatz':[2], 'Zahlung des Kunden':[2]},
+  'Zusatz: Kundenanzahlung vor Lieferung': {'Anzahlung':[0], 'Komponenten verbaut':[1,2], 'Lieferung':[2], 'Verrechnung Anzahlung':[2], 'Restzahlung':[2], 'Zahlung an Lieferanten':[1]},
+  'Aufgabe a) Baumaterial, Insolvenz des Kunden': {'Anzahlung':[2], 'Lieferung':[3], 'Wareneinsatz':[3], 'Verrechnung Anzahlung':[3], 'Abschreibung Restforderung':[5,6]},
+  'Zusatz: Teilausfall, wertaufhellend': {'Leistung erbracht':[0], 'Abschreibung uneinbringlicher Teil':[1,2], 'Quote':[2]},
+  'Zusatz: Ausfall, wertbegründend': {'Leistung erbracht':[0], 'Quote':[3], 'Forderungsausfall':[2,3]},
+  'Aufgabe b) Schadensersatzprozess': {'Rückstellung':[0,1], 'Auflösung Überhang':[2,3], 'Umbuchung':[2,3], '1. Rate + Prozesskosten':[2,3], '2. Rate':[2], '3. Rate':[2], 'Nachbuchung Mehrbetrag':[2,3]},
+  'Zusatz: Garantierückstellung': {'Garantierückstellung':[0,1], 'Reparaturen (Inanspruchnahme)':[2], 'Auflösung Rest':[2], 'Mehrkosten':[2]},
+  'Aufgabe c) Miete t3–t4, nachträglich bezahlt': {'Miete t3':[0], 'Miete t4':[0], 'Zahlung beider Jahre':[1]},
+  'Aufgabe d) Miete t2–t3, im Voraus bezahlt': {'Vorauszahlung':[0], 'Miete t2':[0], 'Miete t3':[0]},
+  'Zusatz: Versicherung über den Jahreswechsel': {'Anteil Okt.–Dez. t1':[0], 'Anteil Jan.–Sep. t2':[0], 'Anteil t2':[0]},
+  'Zusatz: Mieteinnahme im Voraus': {'Vorauszahlung Mieter':[1], 'Mietertrag t2':[1]},
+  'Aufgabe e) Körperschaftsteuer mit Abschlusszahlung': {'4 Vorauszahlungen':[0], 'Restschuld':[1], 'Überzahlung':[1], 'Bescheid: Umbuchung':[2], 'Abschlusszahlung':[3], 'Erstattung':[3]},
+  'Zusatz: Bescheid weicht von der Schätzung ab': {'Vorauszahlungen':[0], 'Restschuld (Schätzung)':[0], 'Umbuchung':[1], 'Nachzahlung (periodenfremd)':[1], 'Minderung (periodenfremd)':[1], 'Abschlusszahlung':[2]},
+  'Aufgabe f) Erdgas-Liefervertrag': {'Drohverlustrückstellung':[0,2], 'Gaseinkauf':[3], 'Lieferung':[3], 'Zahlung Kunde':[0], 'Auflösung':[3], 'Zahlung an Lieferanten':[3]},
+  'Zusatz: Abwertung von Handelswaren': {'Einkauf':[0], 'Abwertung auf Stichtagswert':[1], 'Verkauf':[2], 'Wareneinsatz':[2], 'Zahlung Kunde':[2]},
+  'Aufgabe g) Maschine auf Raten': {'Zugang zu AK':[0], 'Planmäßige AfA':[0,2], '1. Rate':[1], '2. Rate':[1], '3. Rate':[1]},
+  'Zusatz: Außerplanmäßige Abschreibung': {'Kauf':[0], 'Planmäßige AfA':[0], 't4:Planmäßige AfA':[0,1], 'Abwertung':[1]},
+  'Aufgabe h) Weiterverkauf an Externe': {'Einkauf extern':[1], 'Zahlung Lieferant':[1], 'Verkauf an Externe':[3], 'Wareneinsatz':[3], 'Zahlung Kunde':[3]},
+  'Zusatz: Zwischengewinn im Bestand': {'Einkauf extern':[0], 'Verkauf an Externe':[2], 'Wareneinsatz':[2], 'Zahlung Kunde':[2]}
+};
+function svLinks(sv){
+  const saetze = sv.split(/(?<=[.!?])\s+(?=[A-ZÄÖÜ])/);
+  const L = saetze.map(() => ({})), map = SVMAP[fall().titel] || {};
+  for (let p = 1; p <= 4; p++) cur.p[p].b.forEach(([so, ha, amt, txt], i) => {
+    for (const j of map['t' + p + ':' + txt] || map[txt] || []) if (L[j]) (L[j][p] = L[j][p] || []).push(i);
+  });
+  return saetze.map((z, j) => [z, Object.fromEntries(Object.entries(L[j]).map(([p, a]) => [p, a.join(' ')]))]);
+}
+function svMarkiert(sv){
+  return svLinks(sv).map(([z, l], j) => {
+    const ps = Object.keys(l);
+    if (!ps.length) return esc(z);
+    return `<span class="svs" data-bu="${l[per] || ''}" >${esc(z)}</span>`;
+  }).join(' ');
+}
+
+function render(sel){
   cur = fall().fn(vals); cur.p[0] = {n:'', b:[]};
   const bu = cur.p[per].b, s0 = per > 0 ? salden(per - 1) : {}, s1 = salden(per);
-  const nr = i => `(${i + 1})`;
+  const nr = i => '';
   const zeilenFuer = k => bu.map((b, i) => [b, i]).filter(([b]) => b[0] === k || b[1] === k)
-    .map(([[so, ha, amt, txt], i]) => [`${nr(i)} ${esc(txt)}`, delta(k, so, ha, amt), i, '']);
+    .map(([[so, ha, amt], i]) => ['', delta(k, so, ha, amt), i, '']);
   const konten = t => Object.keys(K).filter(k => K[k].t === t && ((s0[k]||0) || (s1[k]||0) || bu.some(b => b[0] === k || b[1] === k)));
 
   let akt = '', sa = 0, pas = '', sp = 0;
-  for (const k of konten('A')){ akt += block(k, s0[k]||0, zeilenFuer(k)); sa += s1[k]||0; }
-  for (const k of konten('EK')){ pas += block(k, s0[k]||0, zeilenFuer(k)); sp += s1[k]||0; }
+  for (const k of konten('A')){ akt += konto(k, s0[k]||0, zeilenFuer(k)); sa += s1[k]||0; }
+  for (const k of konten('EK')){ pas += konto(k, s0[k]||0, zeilenFuer(k)); sp += s1[k]||0; }
   if (per > 0){
     const vt = kum(per - 1);
     if (vt) pas += block('Ergebnisvortrag', vt, []);
     const gz = [];
-    bu.forEach(([so, ha, amt], i) => { for (const k of [so, ha]) if (isGuV(k)) gz.push([`${nr(i)} ${esc(k)}`, delta(k, so, ha, amt), i, '']); });
+    bu.forEach(([so, ha, amt], i) => { for (const k of [so, ha]) if (isGuV(k)) gz.push([esc(k), delta(k, so, ha, amt), i, '']); });
     pas += block('Jahresergebnis ' + P[per], 0, gz);
     sp += kum(per);
   }
-  for (const k of konten('P')){ pas += block(k, s0[k]||0, zeilenFuer(k)); sp += s1[k]||0; }
-  $('aktiva').innerHTML = '<colgroup><col><col style="width:30%"></colgroup><tr><th class="frage" colspan=2>Aktiva</th></tr>' + akt + `<tr class="summe"><td>Summe</td><td class="n">${fmt(sa)}</td></tr>`;
-  $('passiva').innerHTML = '<colgroup><col><col style="width:30%"></colgroup><tr><th class="frage" colspan=2>Passiva</th></tr>' + pas + `<tr class="summe"><td>Summe</td><td class="n">${fmt(sp)}</td></tr>`;
+  for (const k of konten('P')){ pas += konto(k, s0[k]||0, zeilenFuer(k)); sp += s1[k]||0; }
+  $('aktiva').innerHTML = '<colgroup><col><col style="width:30%"></colgroup><tr><th class="frage" colspan=2>Aktiva</th></tr>' + akt;
+  $('passiva').innerHTML = '<colgroup><col><col style="width:30%"></colgroup><tr><th class="frage" colspan=2>Passiva</th></tr>' + pas;
 
-  $('sv').textContent = cur.sv;
+  $('sv').innerHTML = svMarkiert(cur.sv);
     $('pt').textContent = P[per];
 
   $('legende').innerHTML = bu.length ? bu.map(([so, ha, amt, txt], i) =>
-    `<li data-bu="${i}" tabindex="0">${nr(i)} ${esc(so)} an ${esc(ha)} ${fmt(amt)} € – ${esc(txt)} (${wirk(so, ha).join(', ') || 'neutral'})</li>`).join('') : '<li>Keine Buchung.</li>';
+    `<li data-bu="${i}" tabindex="0">${esc(so)} an ${esc(ha)} ${fmt(amt)} €</li>`).join('') : '<li>Keine Buchung.</li>';
   const el = cur.p[per].elim;
   $('elim').innerHTML = el ? 'Eliminiert: ' + el.map(x => `<del>${esc(x)}</del>`).join('; ') : '';
 
@@ -364,8 +411,9 @@ function render(){
     m += `<tr><td>${z}</td>`;
     for (let i = 1; i <= 4; i++){
       const x = F[i-1][z];
-      const t = x ? (i === per ? `X (${x.join(', ')})` : 'X') : '';
-      m += `<td align="center">${x ? (i === per ? '<b>' + t + '</b>' : '<span class="grau">' + t + '</span>') : ''}</td>`;
+      const t = x ? 'X' : '';
+      const db = x && i === per ? ` data-bu="${x.map(n => n - 1).join(' ')}" tabindex="0"` : '';
+      m += `<td align="center"${db}>${x ? (i === per ? '<b>' + t + '</b>' : '<span class="grau">' + t + '</span>') : ''}</td>`;
     }
     m += '</tr>';
   }
@@ -373,7 +421,7 @@ function render(){
 
   document.querySelectorAll('input[name=per]').forEach(r => r.checked = +r.value === per);
   $('prev').disabled = per === 1; $('next').disabled = per === 4;
-  fix = null;
+  fix = sel !== undefined ? sel : bu.length ? '0' : null; mark(fix);
 }
 
 function fmtPar(p, x){ return p[6] ? `${x} ${p[6]}` : fmt(x) + ' €'; }
@@ -405,10 +453,10 @@ P.forEach((p, i) => {
 $('prev').addEventListener('click', () => { if (per > 1){ per--; render(); } });
 $('next').addEventListener('click', () => { if (per < 4){ per++; render(); } });
 
-const mark = i => document.querySelectorAll('[data-bu]').forEach(x => x.classList.toggle('hl', i !== null && x.dataset.bu === String(i)));
-document.addEventListener('mouseover', ev => { if (fix !== null) return; const x = ev.target.closest('[data-bu]'); mark(x ? x.dataset.bu : null); });
-document.addEventListener('focusin', ev => { const x = ev.target.closest('[data-bu]'); if (x) mark(x.dataset.bu); });
-document.addEventListener('click', ev => { const x = ev.target.closest('[data-bu]'); if (!x && ev.target.closest('input,select,button')) return; fix = x && fix !== x.dataset.bu ? x.dataset.bu : null; mark(fix); });
+const mark = i => { const a = i === null || i === undefined ? [] : String(i).split(' '); document.querySelectorAll('[data-bu]').forEach(x => x.classList.toggle('hl', x.dataset.bu.split(' ').some(b => a.includes(b)))); };
+document.addEventListener('mouseover', ev => { const x = ev.target.closest('[data-bu]:not(.svs)'); mark(x ? x.dataset.bu : fix); });
+document.addEventListener('focusin', ev => { const x = ev.target.closest('[data-bu]:not(.svs)'); if (x) mark(x.dataset.bu); });
+document.addEventListener('click', ev => { const x = ev.target.closest('[data-bu]:not(.svs)'); if (!x && ev.target.closest('input,select,button,.svs')) return; fix = x && fix !== x.dataset.bu ? x.dataset.bu : null; mark(fix); });
 
 document.addEventListener('keydown', ev => {
   if (ev.target.closest('input,select,textarea')) return;
