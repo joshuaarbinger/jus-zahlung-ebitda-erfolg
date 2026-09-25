@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light only">
+<title>Zahlungs-, EBITDA- und Erfolgswirkungen in der Bilanz</title>
+<style>
+:root { color-scheme: light; padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+html, body { background: #ffffff; color: #000000; }
+body { font-family: "Times New Roman", Times, serif; }
+h1 { text-align: center; }
+td, th { vertical-align: top; }
+td.frage, th.frage { background-color: #CCCCFF; text-align: left; }
+td.knopf { background-color: #CCFFCC; text-align: center; }
+.bilanz { display: flex; flex-wrap: wrap; gap: 1em; }
+.seite { flex: 1 1 20em; min-width: 0; }
+table.b { border-collapse: collapse; width: 100%; table-layout: fixed; }
+td.n { text-align: right; white-space: nowrap; }
+tr.b td:first-child { padding-left: 1.5em; }
+tr.summe td { font-weight: bold; }
+tr.hl td, li.hl { background-color: #FFCCCC; }
+#legende { list-style: none; padding-left: 0; }
+#legende li { padding: 1px 2px; }
+.grau { color: #808080; }
+input[type=range] { width: 100%; }
+</style>
+</head>
+<body>
+<h1>Zahlungs-, EBITDA- und Erfolgswirkungen im Zeitablauf</h1>
+<hr>
+<table border=0 cellpadding=3 cellspacing=0 width="100%">
+<tr><td class="frage">Schema und Fall</td></tr>
+<tr><td>
+ <label>Schema: <select id="schema"></select></label><br>
+ <label>Fall: <select id="fall"></select></label>
+</td></tr>
+<tr><td class="frage">Sachverhalt</td></tr>
+<tr><td id="sv"></td></tr>
+<tr><td class="frage">Beträge</td></tr>
+<tr><td><table border=0 cellpadding=3 cellspacing=0 width="100%" id="param"></table></td></tr>
+<tr><td class="frage">Kreuztabelle</td></tr>
+<tr><td><table class="b" border=1 cellpadding=3 id="matrix"></table></td></tr>
+<tr><td class="frage">Bilanzveränderung <span id="pt"></span> (in €, gegenüber Beginn t1)</td></tr>
+<tr><td>
+ Periode: <button type="button" id="prev" aria-label="Vorherige Periode">&larr;</button>
+ <span id="perioden"></span>
+ <button type="button" id="next" aria-label="Nächste Periode">&rarr;</button>
+ <ol id="legende"></ol><div id="elim"></div>
+ <div class="bilanz" style="margin-top:.5em"><div class="seite"><table class="b" border=1 cellpadding=3 id="aktiva"></table></div><div class="seite"><table class="b" border=1 cellpadding=3 id="passiva"></table></div></div>
+</td></tr>
+<tr><td class="knopf" id="kennz"></td></tr>
+</table>
+
+<script>
+const K = {
+  'Bank':{t:'A'}, 'Vorräte':{t:'A'}, 'Handelswaren':{t:'A'}, 'Maschinen':{t:'A'},
+  'Forderungen LuL':{t:'A'}, 'Steuererstattungsanspruch':{t:'A'}, 'Aktiver RAP':{t:'A'},
+  'Grundkapital':{t:'EK'},
+  'Erhaltene Anzahlungen':{t:'P'}, 'Sonstige Rückstellungen':{t:'P'}, 'Garantierückstellung':{t:'P'},
+  'Drohverlustrückstellung':{t:'P'}, 'Steuerrückstellung':{t:'P'}, 'Verbindlichkeiten LuL':{t:'P'},
+  'Sonstige Verbindlichkeiten':{t:'P'}, 'Steuerverbindlichkeit':{t:'P'}, 'Passiver RAP':{t:'P'},
+  'Umsatzerlöse':{t:'E',e:true}, 'Sonstige betriebliche Erträge':{t:'E',e:true},
+  'Periodenfremde Steuererträge':{t:'E',e:false},
+  'Materialaufwand':{t:'X',e:true}, 'Sonstige betriebliche Aufwendungen':{t:'X',e:true},
+  'Mietaufwand':{t:'X',e:true}, 'Versicherungsaufwand':{t:'X',e:true},
+  'Abschreibungen':{t:'X',e:false}, 'Außerplanmäßige Abschreibungen':{t:'X',e:false},
+  'Steuern vom Einkommen und Ertrag':{t:'X',e:false}
+};
+const fmt = n => (n < 0 ? '−' : '') + Math.abs(Math.round(n)).toLocaleString('de-DE');
+const e = n => fmt(n) + ' €';
+const E0 = n => [['Bank','Grundkapital',n,'Anfangsbestand']];
+const leer = n => ({n, b:[]});
+
+const SCHEMATA = [
+{ name:'Schwebende Geschäfte und Realisationsprinzip',
+  prinzip:'Vertragsschluss wird nicht gebucht; Umsatz erst bei Lieferung (§ 252 Abs. 1 Nr. 4 Hs. 2 HGB).',
+  faelle:[
+  { titel:'Zusatz: Warenverkauf auf Ziel',
+    par:[['vk','Verkaufspreis',60000,200000,10000,120000],['ek','Einstandspreis',30000,150000,10000,80000]],
+    fn:v=>({ sv:`Die H-GmbH schließt am 1.10.t1 einen Kaufvertrag über Waren zum Preis von ${e(v.vk)}. Die Waren kauft sie am 15.11.t1 für ${e(v.ek)} gegen Barzahlung ein. Sie liefert am 1.3.t2; der Kunde zahlt am 1.2.t3.`,
+      p:[{n:'', b:E0(300000)},
+         {n:'Vertrag schwebend, Einkauf ist Aktivtausch.', b:[['Handelswaren','Bank',v.ek,'Wareneinkauf']]},
+         {n:'Lieferung realisiert den Umsatz.', b:[['Forderungen LuL','Umsatzerlöse',v.vk,'Lieferung'],['Materialaufwand','Handelswaren',v.ek,'Wareneinsatz']]},
+         {n:'Nur Zahlung.', b:[['Bank','Forderungen LuL',v.vk,'Zahlung des Kunden']]},
+         leer('Keine Wirkung.')]})},
+  { titel:'Zusatz: Kundenanzahlung vor Lieferung',
+    par:[['vk','Auftragswert',100000,400000,10000,200000],['q','Anzahlung',10,50,10,30,'%'],['ek','Komponenten (auf Ziel)',50000,300000,10000,150000]],
+    fn:v=>{ const a = v.vk*v.q/100; return { sv:`Ein Kunde bestellt am 1.9.t1 eine Anlage für ${e(v.vk)} und leistet am 1.12.t1 eine Anzahlung von ${v.q} % (${e(a)}). Die Komponenten für ${e(v.ek)} bezieht die A-GmbH im März t2 auf Ziel und bezahlt sie am 15.1.t3. Die Anlage wird am 1.4.t2 geliefert, der Kunde zahlt den Rest am 30.4.t2.`,
+      p:[{n:'', b:E0(300000)},
+         {n:'Anzahlung ist nur Zahlung (Passivposten).', b:[['Bank','Erhaltene Anzahlungen',a,'Anzahlung']]},
+         {n:'Lieferung realisiert den Umsatz.', b:[['Materialaufwand','Verbindlichkeiten LuL',v.ek,'Komponenten verbaut'],['Forderungen LuL','Umsatzerlöse',v.vk,'Lieferung'],['Erhaltene Anzahlungen','Forderungen LuL',a,'Verrechnung Anzahlung'],['Bank','Forderungen LuL',v.vk-a,'Restzahlung']]},
+         {n:'Nur Zahlung.', b:[['Verbindlichkeiten LuL','Bank',v.ek,'Zahlung an Lieferanten']]},
+         leer('Keine Wirkung.')]}}}
+  ]},
+{ name:'Wertaufhellung und Forderungsausfall',
+  prinzip:'Ursache vor dem Stichtag, Kenntnis vor Aufstellung → alte Periode (wertaufhellend); Ursache danach → neue Periode (wertbegründend).',
+  faelle:[
+  { titel:'Aufgabe a) Baumaterial, Insolvenz des Kunden',
+    par:[['vk','Verkaufspreis',80000,150000,10000,100000],['ek','Materialkosten (in t0 bezahlt)',40000,70000,5000,60000],['an','Anzahlung',10000,50000,5000,30000]],
+    fn:v=>({ sv:`Die A-AG handelt mit Baumaterial. Am 1.8.t1 schließt sie mit einem Bauunternehmen einen Vertrag über die Lieferung von Baumaterial für ${e(v.vk)} in t2. Das Bauunternehmen leistet am 1.3.t2 eine Anzahlung von ${e(v.an)}. Am 1.6.t2 wird das bereits in t0 für ${e(v.ek)} bezahlte Material geliefert. Die Schlussrechnung wird trotz Mahnungen nicht beglichen. Am 20.12.t3 stellt das Bauunternehmen Insolvenzantrag; die A-AG erfährt davon am 10.1.t4, vor Aufstellung ihres Abschlusses t3. Das Verfahren wird mangels Masse nicht eröffnet.`,
+      p:[{n:'', b:[['Vorräte','Grundkapital',v.ek,'Material (in t0 bezahlt)'],['Bank','Grundkapital',100000,'Anfangsbestand']]},
+         leer('Schwebendes Geschäft.'),
+         {n:'Anzahlung nur Zahlung; Lieferung realisiert den Umsatz.', b:[['Bank','Erhaltene Anzahlungen',v.an,'Anzahlung'],['Forderungen LuL','Umsatzerlöse',v.vk,'Lieferung'],['Materialaufwand','Vorräte',v.ek,'Wareneinsatz'],['Erhaltene Anzahlungen','Forderungen LuL',v.an,'Verrechnung Anzahlung']]},
+         {n:'Wertaufhellend: Ausfall noch in t3.', b:[['Sonstige betriebliche Aufwendungen','Forderungen LuL',v.vk-v.an,'Abschreibung Restforderung']]},
+         leer('Keine Wirkung.')]})},
+  { titel:'Zusatz: Teilausfall, wertaufhellend',
+    par:[['vk','Forderung',50000,200000,10000,120000],['q','Insolvenzquote',10,90,10,40,'%']],
+    fn:v=>{ const r = v.vk*v.q/100; return { sv:`Die B-GmbH erbringt am 1.11.t2 eine Beratungsleistung über ${e(v.vk)} auf Ziel. Der Kunde stellt am 20.12.t2 Insolvenzantrag; die B-GmbH erfährt davon am 20.1.t3, vor Aufstellung des Abschlusses t2. Der Insolvenzverwalter stellt eine Quote von ${v.q} % in Aussicht, die am 1.9.t3 gezahlt wird.`,
+      p:[{n:'', b:E0(100000)}, leer('Kein Vorgang.'),
+         {n:'Umsatz und wertaufhellende Teilabschreibung.', b:[['Forderungen LuL','Umsatzerlöse',v.vk,'Leistung erbracht'],['Sonstige betriebliche Aufwendungen','Forderungen LuL',v.vk-r,'Abschreibung uneinbringlicher Teil']]},
+         {n:'Nur Zahlung der Quote.', b:[['Bank','Forderungen LuL',r,'Quote']]},
+         leer('Keine Wirkung.')]}}},
+  { titel:'Zusatz: Ausfall, wertbegründend',
+    par:[['vk','Forderung',50000,200000,10000,100000],['q','Insolvenzquote',0,50,10,20,'%']],
+    fn:v=>{ const r = v.vk*v.q/100; return { sv:`Die C-GmbH erbringt am 1.10.t2 eine Leistung über ${e(v.vk)}; der Kaufpreis ist bis 31.3.t4 gestundet. Der Kunde ist an beiden Stichtagen solvent. Am 15.1.t4 zerstört ein Brand seine Produktionsstätte, er stellt Insolvenzantrag. Am 1.3.t4 wird eine Quote von ${v.q} % gezahlt.`,
+      p:[{n:'', b:E0(100000)}, leer('Kein Vorgang.'),
+         {n:'Umsatz realisiert.', b:[['Forderungen LuL','Umsatzerlöse',v.vk,'Leistung erbracht']]},
+         leer('Ursache liegt nach dem Stichtag → keine Abschreibung in t3.'),
+         {n:'Wertbegründend: Ausfall erst in t4.', b:[['Bank','Forderungen LuL',r,'Quote'],['Sonstige betriebliche Aufwendungen','Forderungen LuL',v.vk-r,'Forderungsausfall']]}]}}}
+  ]},
+{ name:'Rückstellungen für ungewisse Verbindlichkeiten',
+  prinzip:'Rückstellung bei wahrscheinlicher Inanspruchnahme (§ 249 Abs. 1 S. 1 HGB); später Auflösung (Ertrag), Nachbuchung (Aufwand) oder erfolgsneutrale Umbuchung.',
+  faelle:[
+  { titel:'Aufgabe b) Schadensersatzprozess',
+    par:[['r','Erwartete Zahlung t1',500000,1000000,50000,800000],['v','Vergleichssumme',300000,900000,30000,450000],['k','Prozesskosten',30000,150000,10000,90000]],
+    fn:v=>{ const ist = v.v + v.k, d = v.r - ist, b2 = [];
+      if (d > 0) b2.push(['Sonstige Rückstellungen','Sonstige betriebliche Erträge',d,'Auflösung Überhang']);
+      b2.push(['Sonstige Rückstellungen','Sonstige Verbindlichkeiten',Math.min(v.r, ist),'Umbuchung']);
+      if (d < 0) b2.push(['Sonstige betriebliche Aufwendungen','Sonstige Verbindlichkeiten',-d,'Nachbuchung Mehrbetrag']);
+      b2.push(['Sonstige Verbindlichkeiten','Bank',v.v/3 + v.k,'1. Rate + Prozesskosten']);
+      return { sv:`Die B-GmbH wird in t1 von einem Kunden auf Schadensersatz für Folgeschäden eines fehlerhaften Produkts verklagt. Sie hält es für wahrscheinlich, für Schadensersatz und Prozesskosten ${e(v.r)} zahlen zu müssen. In t2 vergleichen sich die Parteien auf ${e(v.v)}, zahlbar in drei gleichen Raten in t2, t3 und t4. Die Prozess- und Anwaltskosten von ${e(v.k)} werden in t2 beglichen. Abzinsung wird vernachlässigt.`,
+      p:[{n:'', b:E0(1500000)},
+         {n:'Rückstellung.', b:[['Sonstige betriebliche Aufwendungen','Sonstige Rückstellungen',v.r,'Rückstellung']]},
+         {n: d > 0 ? 'Rückstellung zu hoch → Ertrag.' : d < 0 ? 'Rückstellung zu niedrig → Aufwand.' : 'Rückstellung passt → erfolgsneutral.', b:b2},
+         {n:'Nur Tilgung.', b:[['Sonstige Verbindlichkeiten','Bank',v.v/3,'2. Rate']]},
+         {n:'Nur Tilgung.', b:[['Sonstige Verbindlichkeiten','Bank',v.v/3,'3. Rate']]}]}}},
+  { titel:'Zusatz: Garantierückstellung',
+    par:[['g','Erwartete Garantiekosten',20000,80000,5000,50000],['c','Tatsächliche Kosten',10000,100000,5000,35000]],
+    fn:v=>{ const b2 = [['Garantierückstellung','Bank',Math.min(v.g, v.c),'Reparaturen (Inanspruchnahme)']];
+      if (v.c > v.g) b2.push(['Sonstige betriebliche Aufwendungen','Bank',v.c-v.g,'Mehrkosten']);
+      if (v.g > v.c) b2.push(['Garantierückstellung','Sonstige betriebliche Erträge',v.g-v.c,'Auflösung Rest']);
+      return { sv:`Die G-AG verkauft in t1 Geräte mit einjähriger Garantie. Zum 31.12.t1 erwartet sie Garantiekosten von ${e(v.g)}. In t2 fallen Reparaturen von ${e(v.c)} an, die sofort bezahlt werden; danach bestehen keine Ansprüche mehr.`,
+      p:[{n:'', b:E0(200000)},
+         {n:'Rückstellung.', b:[['Sonstige betriebliche Aufwendungen','Garantierückstellung',v.g,'Garantierückstellung']]},
+         {n:'Verbrauch; Differenz ist erfolgswirksam.', b:b2},
+         leer('Keine Wirkung.'), leer('Keine Wirkung.')]}}}
+  ]},
+{ name:'Periodisierung: Dauerschuldverhältnisse und RAP',
+  prinzip:'Aufwand und Ertrag gehören in die Nutzungsperiode; Vorauszahlungen über den Stichtag → RAP (§ 250 HGB), Nachzahlungen → Verbindlichkeit.',
+  faelle:[
+  { titel:'Aufgabe c) Miete t3–t4, nachträglich bezahlt',
+    par:[['m','Jahresmiete',20000,120000,10000,50000]],
+    fn:v=>({ sv:`Das Unternehmen schließt am 1.8.t1 einen Vertrag über die Anmietung von Geschäftsräumen für t3 bis t4 zu ${e(v.m)} pro Jahr. Es zahlt die Miete für beide Jahre am 1.10.t4 in einer Summe.`,
+      p:[{n:'', b:E0(300000)}, leer('Schwebendes Dauerschuldverhältnis.'), leer('Mietzeit noch nicht begonnen.'),
+         {n:'Aufwand; Schuld steht fest.', b:[['Mietaufwand','Sonstige Verbindlichkeiten',v.m,'Miete t3']]},
+         {n:'Aufwand t4 und Zahlung.', b:[['Mietaufwand','Sonstige Verbindlichkeiten',v.m,'Miete t4'],['Sonstige Verbindlichkeiten','Bank',2*v.m,'Zahlung beider Jahre']]}]})},
+  { titel:'Aufgabe d) Miete t2–t3, im Voraus bezahlt',
+    par:[['m','Jahresmiete',20000,120000,10000,50000]],
+    fn:v=>({ sv:`Das Unternehmen schließt am 1.10.t1 einen Mietvertrag für den Zeitraum 1.1.t2 bis 31.12.t3 zu ${e(v.m)} pro Jahr und zahlt die gesamte Miete bereits am 20.12.t1 im Voraus.`,
+      p:[{n:'', b:E0(300000)},
+         {n:'Aktiver RAP.', b:[['Aktiver RAP','Bank',2*v.m,'Vorauszahlung']]},
+         {n:'Auflösung RAP.', b:[['Mietaufwand','Aktiver RAP',v.m,'Miete t2']]},
+         {n:'Auflösung RAP.', b:[['Mietaufwand','Aktiver RAP',v.m,'Miete t3']]},
+         leer('Keine Wirkung.')]})},
+  { titel:'Zusatz: Versicherung über den Jahreswechsel',
+    par:[['p','Jahresprämie',12000,48000,1200,24000]],
+    fn:v=>({ sv:`Das Unternehmen zahlt am 1.10.t1 die Jahresprämie einer Betriebshaftpflichtversicherung von ${e(v.p)} für den Zeitraum 1.10.t1 bis 30.9.t2.`,
+      p:[{n:'', b:E0(100000)},
+         {n:'3/12 Aufwand, 9/12 aktiver RAP.', b:[['Versicherungsaufwand','Bank',v.p*3/12,'Anteil Okt.–Dez. t1'],['Aktiver RAP','Bank',v.p*9/12,'Anteil Jan.–Sep. t2']]},
+         {n:'Auflösung RAP.', b:[['Versicherungsaufwand','Aktiver RAP',v.p*9/12,'Anteil t2']]},
+         leer('Keine Wirkung.'), leer('Keine Wirkung.')]})},
+  { titel:'Zusatz: Mieteinnahme im Voraus',
+    par:[['m','Jahresmiete',12000,60000,6000,24000]],
+    fn:v=>({ sv:`Das Unternehmen vermietet eine Lagerhalle. Der Mieter zahlt am 15.12.t1 die Miete für t2 von ${e(v.m)} im Voraus.`,
+      p:[{n:'', b:E0(100000)},
+         {n:'Einnahme vor dem Stichtag, Ertrag danach → passiver RAP.', b:[['Bank','Passiver RAP',v.m,'Vorauszahlung Mieter']]},
+         {n:'Auflösung RAP.', b:[['Passiver RAP','Sonstige betriebliche Erträge',v.m,'Mietertrag t2']]},
+         leer('Keine Wirkung.'), leer('Keine Wirkung.')]})}
+  ]},
+{ name:'Ertragsteuern',
+  prinzip:'Steueraufwand gehört in das Jahr seiner Entstehung, liegt aber unterhalb des EBITDA; Bescheid und Zahlung sind erfolgsneutral, Abweichungen periodenfremd.',
+  faelle:[
+  { titel:'Aufgabe e) Körperschaftsteuer mit Abschlusszahlung',
+    par:[['q','Vorauszahlung je Quartal',20000,40000,5000,30000],['s','KSt-Schuld t1',80000,200000,10000,140000]],
+    fn:v=>{ const d = v.s - 4*v.q, b1 = [['Steuern vom Einkommen und Ertrag','Bank',4*v.q,'4 Vorauszahlungen']], b2 = [], b3 = [];
+      if (d > 0){ b1.push(['Steuern vom Einkommen und Ertrag','Steuerrückstellung',d,'Restschuld']); b2.push(['Steuerrückstellung','Steuerverbindlichkeit',d,'Bescheid: Umbuchung']); b3.push(['Steuerverbindlichkeit','Bank',d,'Abschlusszahlung']); }
+      if (d < 0){ b1.push(['Steuererstattungsanspruch','Steuern vom Einkommen und Ertrag',-d,'Überzahlung']); b3.push(['Bank','Steuererstattungsanspruch',-d,'Erstattung']); }
+      return { sv:`Das Unternehmen leistet in t1 vier Vorauszahlungen auf die Körperschaftsteuer t1 von je ${e(v.q)}. Am 31.12.t1 schätzt es die KSt-Schuld t1 zutreffend auf ${e(v.s)}. Die Steuererklärung wird am 1.9.t2 abgegeben; der Bescheid setzt ${e(v.s)} fest. Die ${d >= 0 ? 'Abschlusszahlung' : 'Erstattung'} von ${e(Math.abs(d))} erfolgt am 10.3.t3.`,
+      p:[{n:'', b:E0(500000)},
+         {n:'Gesamter Steueraufwand in t1.', b:b1},
+         {n: d > 0 ? 'Nur Umbuchung.' : 'Keine Wirkung.', b:b2},
+         {n: d ? 'Nur Zahlung.' : 'Keine Wirkung.', b:b3},
+         leer('Keine Wirkung.')]}}},
+  { titel:'Zusatz: Bescheid weicht von der Schätzung ab',
+    par:[['s','Geschätzte Schuld t1',130000,170000,10000,140000],['b','Festgesetzte Schuld',120000,200000,10000,160000]],
+    fn:v=>{ const vz = 120000, b2 = [['Steuerrückstellung','Steuerverbindlichkeit',v.s-vz,'Umbuchung']];
+      if (v.b > v.s) b2.push(['Steuern vom Einkommen und Ertrag','Steuerverbindlichkeit',v.b-v.s,'Nachzahlung (periodenfremd)']);
+      if (v.b < v.s) b2.push(['Steuerverbindlichkeit','Periodenfremde Steuererträge',v.s-v.b,'Minderung (periodenfremd)']);
+      return { sv:`Das Unternehmen leistet in t1 Vorauszahlungen von insgesamt ${e(vz)} und schätzt die KSt-Schuld t1 am Stichtag auf ${e(v.s)}. Der Bescheid vom Oktober t2 setzt ${e(v.b)} fest. Die Differenz zu den Vorauszahlungen wird am 10.3.t3 gezahlt.`,
+      p:[{n:'', b:E0(500000)},
+         {n:'Aufwand in Höhe der Schätzung.', b:[['Steuern vom Einkommen und Ertrag','Bank',vz,'Vorauszahlungen'],['Steuern vom Einkommen und Ertrag','Steuerrückstellung',v.s-vz,'Restschuld (Schätzung)']]},
+         {n: v.b === v.s ? 'Nur Umbuchung.' : 'Abweichung ist periodenfremd in t2.', b:b2},
+         {n:'Nur Zahlung.', b: v.b > vz ? [['Steuerverbindlichkeit','Bank',v.b-vz,'Abschlusszahlung']] : []},
+         leer('Keine Wirkung.')]}}}
+  ]},
+{ name:'Imparitätsprinzip: Drohverluste und Niederstwert',
+  prinzip:'Unrealisierte Verluste werden vorweggenommen: Drohverlustrückstellung (§ 249 Abs. 1 S. 1 HGB), Abwertung auf den niedrigeren Stichtagswert (§ 253 Abs. 4 HGB).',
+  faelle:[
+  { titel:'Aufgabe f) Erdgas-Liefervertrag',
+    par:[['sp','Beschaffungspreis am 31.12.t1',2100000,3000000,100000,2600000],['ek','Tatsächlicher Einkauf',1600000,2800000,100000,2300000]],
+    fn:v=>{ const vk = 2000000, dv = v.sp - vk; return { sv:`Im Jahr t1 verpflichtet sich das Unternehmen, am 1.5.t2 eine bestimmte Menge Erdgas zum Preis von ${e(vk)} zu liefern (Zahlung durch den Kunden am 1.6.t2). Das Gas soll erst in t2 beschafft werden. Am 31.12.t1 würde die Beschaffung ${e(v.sp)} kosten. Im April t2 erwirbt das Unternehmen das Gas für ${e(v.ek)} (Zahlung fällig am 1.2.t3) und erfüllt den Vertrag.`,
+      p:[{n:'', b:E0(3000000)},
+         {n:'Verpflichtungsüberhang → Drohverlust.', b:[['Sonstige betriebliche Aufwendungen','Drohverlustrückstellung',dv,'Drohverlustrückstellung']]},
+         {n:'Erfüllung; Rückstellung wird aufgelöst.', b:[['Materialaufwand','Verbindlichkeiten LuL',v.ek,'Gaseinkauf'],['Forderungen LuL','Umsatzerlöse',vk,'Lieferung'],['Bank','Forderungen LuL',vk,'Zahlung Kunde'],['Drohverlustrückstellung','Sonstige betriebliche Erträge',dv,'Auflösung']]},
+         {n:'Nur Zahlung.', b:[['Verbindlichkeiten LuL','Bank',v.ek,'Zahlung an Lieferanten']]},
+         leer('Keine Wirkung.')]}}},
+  { titel:'Zusatz: Abwertung von Handelswaren',
+    par:[['ak','Anschaffungskosten',50000,150000,10000,100000],['w','Stichtagswert',50,95,5,70,'% der AK'],['vk','Verkaufspreis t2',60000,200000,10000,110000]],
+    fn:v=>{ const w = v.ak*v.w/100; return { sv:`Die H-GmbH kauft im Oktober t1 Waren für ${e(v.ak)} gegen Barzahlung. Am 31.12.t1 ist der Marktpreis auf ${e(w)} gefallen. Im Februar t2 verkauft sie die Waren für ${e(v.vk)}; der Kunde zahlt im März t2.`,
+      p:[{n:'', b:E0(300000)},
+         {n:'Niederstwertprinzip: Abwertung (Materialaufwand, EBITDA-wirksam).', b:[['Handelswaren','Bank',v.ak,'Einkauf'],['Materialaufwand','Handelswaren',v.ak-w,'Abwertung auf Stichtagswert']]},
+         {n:'Verkauf zum Buchwert-Einsatz.', b:[['Forderungen LuL','Umsatzerlöse',v.vk,'Verkauf'],['Materialaufwand','Handelswaren',w,'Wareneinsatz'],['Bank','Forderungen LuL',v.vk,'Zahlung Kunde']]},
+         leer('Keine Wirkung.'), leer('Keine Wirkung.')]}}}
+  ]},
+{ name:'Anlagevermögen und Abschreibungen',
+  prinzip:'Anschaffung ist erfolgsneutral; Abschreibungen sind Aufwand ab Betriebsbereitschaft, aber nicht EBITDA-wirksam.',
+  faelle:[
+  { titel:'Aufgabe g) Maschine auf Raten',
+    par:[['ak','Anschaffungskosten',120000,600000,30000,300000],['nd','Nutzungsdauer',5,15,1,10,'Jahre']],
+    fn:v=>{ const afa = Math.round(v.ak/v.nd), r = v.ak/3; return { sv:`Das Unternehmen erwirbt eine Produktionsmaschine für ${e(v.ak)}, die im Dezember t1 geliefert wird und im Januar t2 produktionsbereit ist. Die Zahlung erfolgt in drei gleichen Raten im Juni t2, Juni t3 und Dezember t3. Die Nutzungsdauer beträgt ${v.nd} Jahre.`,
+      p:[{n:'', b:E0(700000)},
+         {n:'Aktivierung; noch keine AfA.', b:[['Maschinen','Verbindlichkeiten LuL',v.ak,'Zugang zu AK']]},
+         {n:'AfA ab Betriebsbereitschaft.', b:[['Abschreibungen','Maschinen',afa,'Planmäßige AfA'],['Verbindlichkeiten LuL','Bank',r,'1. Rate']]},
+         {n:'AfA und Tilgung.', b:[['Abschreibungen','Maschinen',afa,'Planmäßige AfA'],['Verbindlichkeiten LuL','Bank',r,'2. Rate'],['Verbindlichkeiten LuL','Bank',r,'3. Rate']]},
+         {n:'Nur AfA.', b:[['Abschreibungen','Maschinen',afa,'Planmäßige AfA']]}]}}},
+  { titel:'Zusatz: Außerplanmäßige Abschreibung',
+    par:[['ak','Anschaffungskosten',100000,500000,50000,200000],['w','Wert Ende t3',10,60,10,30,'% der AK']],
+    fn:v=>{ const afa = v.ak/10, w = v.ak*v.w/100, bw = v.ak - 3*afa; return { sv:`Die M-GmbH kauft am 2.1.t1 eine sofort betriebsbereite Maschine für ${e(v.ak)} gegen Barzahlung; Nutzungsdauer 10 Jahre. Ende t3 sinkt ihr Wert wegen einer technischen Neuerung dauerhaft auf ${e(w)}.`,
+      p:[{n:'', b:E0(600000)},
+         {n:'Aktivierung und AfA.', b:[['Maschinen','Bank',v.ak,'Kauf'],['Abschreibungen','Maschinen',afa,'Planmäßige AfA']]},
+         {n:'Nur AfA.', b:[['Abschreibungen','Maschinen',afa,'Planmäßige AfA']]},
+         {n:'Dauerhafte Wertminderung (§ 253 Abs. 3 S. 5 HGB).', b:[['Abschreibungen','Maschinen',afa,'Planmäßige AfA'],['Außerplanmäßige Abschreibungen','Maschinen',bw-w,'Abwertung']]},
+         {n:'AfA vom neuen Buchwert über 7 Jahre.', b:[['Abschreibungen','Maschinen',Math.round(w/7),'Planmäßige AfA']]}]}}}
+  ]},
+{ name:'Konzernabschluss: Einheitstheorie',
+  prinzip:'Der Konzern gilt als ein Unternehmen (§ 297 Abs. 3 HGB): Innenumsätze, -forderungen und Zwischenergebnisse werden eliminiert (§§ 303–305 HGB).',
+  faelle:[
+  { titel:'Aufgabe h) Weiterverkauf an Externe',
+    par:[['ek','Einkauf C-AG',80000,120000,10000,100000],['ip','Interner Preis',70000,150000,10000,90000],['ap','Außenpreis',100000,200000,5000,125000]],
+    fn:v=>{ const z = v.ip - v.ek; return { sv:`Die C-AG und die D-GmbH gehören beide zum C-Konzern. Die C-AG erwirbt von einem Lieferanten in t1 Handelswaren für ${e(v.ek)}; die Bezahlung erfolgt in t2. In t2 veräußert die C-AG diese Waren für ${e(v.ip)} an die D-GmbH und stundet den Kaufpreis bis t3. In t3 veräußert die D-GmbH die Waren für ${e(v.ap)} an einen ausländischen Kunden; die Lieferung erfolgt in t3, die Bezahlung in t4. Gefragt ist nach dem Konzernabschluss.`,
+      p:[{n:'', b:E0(300000)},
+         {n:'Warenzugang.', b:[['Handelswaren','Verbindlichkeiten LuL',v.ek,'Einkauf extern']]},
+         {n:'Nur Zahlung an Externe.', b:[['Verbindlichkeiten LuL','Bank',v.ek,'Zahlung Lieferant']],
+          elim:[`Innenumsatz C-AG ${e(v.ip)}`, `Zwischen${z >= 0 ? 'gewinn' : 'verlust'} ${e(Math.abs(z))}`, 'Forderung C-AG / Verbindlichkeit D-GmbH']},
+         {n:'Außenumsatz, Einsatz zu Konzern-AK.', b:[['Forderungen LuL','Umsatzerlöse',v.ap,'Verkauf an Externe'],['Materialaufwand','Handelswaren',v.ek,'Wareneinsatz']],
+          elim:['Interne Zahlung D-GmbH → C-AG']},
+         {n:'Nur Zahlung.', b:[['Bank','Forderungen LuL',v.ap,'Zahlung Kunde']]}]}}},
+  { titel:'Zusatz: Zwischengewinn im Bestand',
+    par:[['ek','Einkauf C-AG',50000,150000,10000,100000],['ip','Interner Preis',60000,200000,10000,130000],['ap','Außenpreis',80000,250000,10000,160000]],
+    fn:v=>({ sv:`Die C-AG kauft am 1.3.t1 Waren für ${e(v.ek)} gegen Barzahlung und verkauft sie am 1.10.t1 für ${e(v.ip)} bar an ihre Tochter D-GmbH. Am 31.12.t1 liegen die Waren noch im Lager der D-GmbH. Am 1.5.t2 verkauft die D-GmbH sie für ${e(v.ap)} an einen externen Kunden, der am 1.7.t2 zahlt. Gefragt ist nach dem Konzernabschluss.`,
+      p:[{n:'', b:E0(300000)},
+         {n:'Ware bleibt mit Konzern-AK im Bestand.', b:[['Handelswaren','Bank',v.ek,'Einkauf extern']],
+          elim:[`Innenumsatz ${e(v.ip)} und interne Zahlung`, `Zwischen${v.ip >= v.ek ? 'gewinn' : 'verlust'} ${e(Math.abs(v.ip - v.ek))}`]},
+         {n:'Erst jetzt realisiert.', b:[['Forderungen LuL','Umsatzerlöse',v.ap,'Verkauf an Externe'],['Materialaufwand','Handelswaren',v.ek,'Wareneinsatz'],['Bank','Forderungen LuL',v.ap,'Zahlung Kunde']]},
+         leer('Keine Wirkung.'), leer('Keine Wirkung.')]})}
+  ]}
+];
+
+const P = ['t0','t1','t2','t3','t4'];
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+const fmtD = n => (n < 0 ? '−' : '+') + Math.abs(Math.round(n)).toLocaleString('de-DE');
+let si = 0, fi = 0, per = 1, vals = {}, cur = null, fix = null;
+
+const fall = () => SCHEMATA[si].faelle[fi];
+const isGuV = k => K[k].t === 'E' || K[k].t === 'X';
+function delta(k, so, ha, amt){
+  const t = K[k].t; let d = 0;
+  if (k === so) d += (t === 'A' || t === 'X') ? amt : -amt;
+  if (k === ha) d += (t === 'A' || t === 'X') ? -amt : amt;
+  return t === 'X' ? -d : d;
+}
+function salden(p){
+  const s = {};
+  for (let i = 0; i <= p; i++) for (const [so, ha, amt] of cur.p[i].b)
+    for (const k of [so, ha]) if (!isGuV(k)){
+      const d = delta(k, so, ha, amt);
+      s[k] = (s[k] || 0) + (K[k].t === 'A' ? d : d);
+    }
+  return s;
+}
+function ergebnis(i){ let r = 0; for (const [so, ha, amt] of cur.p[i].b) for (const k of [so, ha]) if (isGuV(k)) r += delta(k, so, ha, amt); return r; }
+function kum(p){ let r = 0; for (let i = 1; i <= p; i++) r += ergebnis(i); return r; }
+const klasse = k => k === 'Bank' ? 'zahl' : isGuV(k) ? (K[k].e ? 'ebitda' : 'erfolg') : '';
+
+function block(name, anfang, zeilen){
+  if (!zeilen.length) return `<tr><td>${esc(name)}</td><td class="n">${fmt(anfang)}</td></tr>`;
+  const ende = anfang + zeilen.reduce((x, z) => x + z[1], 0);
+  let h = `<tr><td>${esc(name)}</td><td class="n grau">${fmt(anfang)}</td></tr>`;
+  for (const [l, d, i, c] of zeilen) h += `<tr class="b ${c}" data-bu="${i}"><td>${l}</td><td class="n">${fmtD(d)}</td></tr>`;
+  return h + `<tr><td></td><td class="n"><b>${fmt(ende)}</b></td></tr>`;
+}
+
+function wirk(so, ha){
+  const w = [];
+  if (so === 'Bank') w.push('Einzahlung');
+  if (ha === 'Bank') w.push('Auszahlung');
+  if (K[ha].t === 'E'){ if (K[ha].e) w.push('EBITDA-Erhöhung'); w.push('Ertrag'); }
+  if (K[so].t === 'X'){ if (K[so].e) w.push('EBITDA-Senkung'); w.push('Aufwand'); }
+  if (K[ha].t === 'X') w.push('Ertrag');
+  return w;
+}
+function flags(i){
+  const f = {};
+  cur.p[i].b.forEach(([so, ha], n) => { for (const w of wirk(so, ha)) (f[w] = f[w] || []).push(n + 1); });
+  return f;
+}
+
+function render(){
+  cur = fall().fn(vals); cur.p[0] = {n:'', b:[]};
+  const bu = cur.p[per].b, s0 = per > 0 ? salden(per - 1) : {}, s1 = salden(per);
+  const nr = i => `(${i + 1})`;
+  const zeilenFuer = k => bu.map((b, i) => [b, i]).filter(([b]) => b[0] === k || b[1] === k)
+    .map(([[so, ha, amt, txt], i]) => [`${nr(i)} ${esc(txt)}`, delta(k, so, ha, amt), i, '']);
+  const konten = t => Object.keys(K).filter(k => K[k].t === t && ((s0[k]||0) || (s1[k]||0) || bu.some(b => b[0] === k || b[1] === k)));
+
+  let akt = '', sa = 0, pas = '', sp = 0;
+  for (const k of konten('A')){ akt += block(k, s0[k]||0, zeilenFuer(k)); sa += s1[k]||0; }
+  for (const k of konten('EK')){ pas += block(k, s0[k]||0, zeilenFuer(k)); sp += s1[k]||0; }
+  if (per > 0){
+    const vt = kum(per - 1);
+    if (vt) pas += block('Ergebnisvortrag', vt, []);
+    const gz = [];
+    bu.forEach(([so, ha, amt], i) => { for (const k of [so, ha]) if (isGuV(k)) gz.push([`${nr(i)} ${esc(k)}`, delta(k, so, ha, amt), i, '']); });
+    pas += block('Jahresergebnis ' + P[per], 0, gz);
+    sp += kum(per);
+  }
+  for (const k of konten('P')){ pas += block(k, s0[k]||0, zeilenFuer(k)); sp += s1[k]||0; }
+  $('aktiva').innerHTML = '<colgroup><col><col style="width:30%"></colgroup><tr><th class="frage" colspan=2>Aktiva</th></tr>' + akt + `<tr class="summe"><td>Summe</td><td class="n">${fmt(sa)}</td></tr>`;
+  $('passiva').innerHTML = '<colgroup><col><col style="width:30%"></colgroup><tr><th class="frage" colspan=2>Passiva</th></tr>' + pas + `<tr class="summe"><td>Summe</td><td class="n">${fmt(sp)}</td></tr>`;
+
+  $('sv').textContent = cur.sv;
+    $('pt').textContent = P[per];
+
+  $('legende').innerHTML = bu.length ? bu.map(([so, ha, amt, txt], i) =>
+    `<li data-bu="${i}" tabindex="0">${nr(i)} ${esc(so)} an ${esc(ha)} ${fmt(amt)} € – ${esc(txt)} (${wirk(so, ha).join(', ') || 'neutral'})</li>`).join('') : '<li>Keine Buchung.</li>';
+  const el = cur.p[per].elim;
+  $('elim').innerHTML = el ? 'Eliminiert: ' + el.map(x => `<del>${esc(x)}</del>`).join('; ') : '';
+
+  if (per > 0){
+    let eb = 0, z = 0;
+    for (const [so, ha, amt] of bu){
+      for (const k of [so, ha]) if (isGuV(k) && K[k].e) eb += delta(k, so, ha, amt);
+      if (so === 'Bank') z += amt; if (ha === 'Bank') z -= amt;
+    }
+    $('kennz').innerHTML = `${P[per]}: Zahlungssaldo ${fmtD(z)} € &nbsp; EBITDA ${fmtD(eb)} € &nbsp; Ergebnis ${fmtD(ergebnis(per))} €`;
+  } else $('kennz').textContent = 'Eröffnungsbilanz';
+
+  const zeilen = [['Einzahlung','zahl'],['Auszahlung','zahl'],['EBITDA-Erhöhung','ebitda'],['EBITDA-Senkung','ebitda'],['Ertrag','erfolg'],['Aufwand','erfolg']];
+  const F = [1,2,3,4].map(flags);
+  let m = '<colgroup><col style="width:28%"><col span="4" style="width:18%"></colgroup><tr><th></th>' + [1,2,3,4].map(i => `<th>${i === per ? 't' + i : '<span class="grau">t' + i + '</span>'}</th>`).join('') + '</tr>';
+  for (const [z, c] of zeilen){
+    m += `<tr><td>${z}</td>`;
+    for (let i = 1; i <= 4; i++){
+      const x = F[i-1][z];
+      const t = x ? (i === per ? `X (${x.join(', ')})` : 'X') : '';
+      m += `<td align="center">${x ? (i === per ? '<b>' + t + '</b>' : '<span class="grau">' + t + '</span>') : ''}</td>`;
+    }
+    m += '</tr>';
+  }
+  $('matrix').innerHTML = m;
+
+  document.querySelectorAll('input[name=per]').forEach(r => r.checked = +r.value === per);
+  $('prev').disabled = per === 1; $('next').disabled = per === 4;
+  fix = null;
+}
+
+function fmtPar(p, x){ return p[6] ? `${x} ${p[6]}` : fmt(x) + ' €'; }
+function baueParameter(){
+  vals = {};
+  $('param').innerHTML = fall().par.map((p, j) => {
+    vals[p[0]] = p[5];
+    return `<tr><td width="35%"><label for="par${j}">${esc(p[1])}</label></td><td><input type="range" id="par${j}" min="${p[2]}" max="${p[3]}" step="${p[4]}" value="${p[5]}"></td><td width="20%" align="right"><output id="out${j}">${fmtPar(p, p[5])}</output></td></tr>`;
+  }).join('');
+  fall().par.forEach((p, j) => $('par' + j).addEventListener('input', ev => {
+    vals[p[0]] = +ev.target.value; $('out' + j).textContent = fmtPar(p, vals[p[0]]); render();
+  }));
+}
+function baueFaelle(){
+  $('fall').innerHTML = SCHEMATA[si].faelle.map((f, j) => `<option value="${j}">${esc(f.titel)}</option>`).join('');
+  fi = 0; per = 1; baueParameter(); render();
+}
+
+$('schema').innerHTML = SCHEMATA.map((s, j) => `<option value="${j}">${j + 1}. ${esc(s.name)}</option>`).join('');
+$('schema').addEventListener('change', ev => { si = +ev.target.value; baueFaelle(); });
+$('fall').addEventListener('change', ev => { fi = +ev.target.value; per = 1; baueParameter(); render(); });
+P.forEach((p, i) => {
+  if (i === 0) return;
+  const l = document.createElement('label');
+  l.innerHTML = `<input type="radio" name="per" value="${i}"> ${p} `;
+  l.querySelector('input').addEventListener('change', () => { per = i; render(); });
+  $('perioden').appendChild(l);
+});
+$('prev').addEventListener('click', () => { if (per > 1){ per--; render(); } });
+$('next').addEventListener('click', () => { if (per < 4){ per++; render(); } });
+
+const mark = i => document.querySelectorAll('[data-bu]').forEach(x => x.classList.toggle('hl', i !== null && x.dataset.bu === String(i)));
+document.addEventListener('mouseover', ev => { if (fix !== null) return; const x = ev.target.closest('[data-bu]'); mark(x ? x.dataset.bu : null); });
+document.addEventListener('focusin', ev => { const x = ev.target.closest('[data-bu]'); if (x) mark(x.dataset.bu); });
+document.addEventListener('click', ev => { const x = ev.target.closest('[data-bu]'); if (!x && ev.target.closest('input,select,button')) return; fix = x && fix !== x.dataset.bu ? x.dataset.bu : null; mark(fix); });
+
+document.addEventListener('keydown', ev => {
+  if (ev.target.closest('input,select,textarea')) return;
+  if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight'){
+    ev.preventDefault();
+    const p = per + (ev.key === 'ArrowRight' ? 1 : -1);
+    if (p >= 1 && p <= 4){ per = p; render(); }
+    return;
+  }
+  const n = cur.p[per].b.length;
+  if (!n || (ev.key !== 'ArrowDown' && ev.key !== 'ArrowUp')) return;
+  ev.preventDefault();
+  const i = fix === null ? (ev.key === 'ArrowDown' ? 0 : n - 1)
+    : (+fix + (ev.key === 'ArrowDown' ? 1 : -1) + n) % n;
+  fix = String(i); mark(fix);
+});
+baueFaelle();
+</script>
+</body>
+</html>
